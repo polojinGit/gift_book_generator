@@ -1,0 +1,759 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>증정도서 신청서 생성기 (팀 전용)</title>
+    
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    
+    <!-- React & ReactDOM -->
+    <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+    
+    <!-- Babel for JSX -->
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    
+    <!-- SheetJS with Style Support (xlsx-js-style) -->
+    <script src="https://cdn.jsdelivr.net/npm/xlsx-js-style@1.2.0/dist/xlsx.bundle.js"></script>
+
+    <!-- CryptoJS (보안 호환성용) -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/crypto-js/4.1.1/crypto-js.min.js"></script>
+
+    <!-- Firebase SDKs -->
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.2.0/firebase-app.js";
+        import { getAuth, signInAnonymously, onAuthStateChanged, signInWithCustomToken, signInWithEmailAndPassword, signOut } from "https://www.gstatic.com/firebasejs/11.2.0/firebase-auth.js";
+        import { getFirestore, collection, addDoc, deleteDoc, doc, onSnapshot, query, orderBy, serverTimestamp } from "https://www.gstatic.com/firebasejs/11.2.0/firebase-firestore.js";
+
+        // 전역 모듈로 노출
+        window.firebaseModules = {
+            initializeApp, getAuth, signInAnonymously, onAuthStateChanged, signInWithCustomToken, signInWithEmailAndPassword, signOut,
+            getFirestore, collection, addDoc, deleteDoc, doc, onSnapshot, query, orderBy, serverTimestamp
+        };
+    </script>
+    
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@300;400;500;700&display=swap');
+        body { font-family: 'Noto Sans KR', sans-serif; }
+        
+        .modal-overlay { background-color: rgba(0, 0, 0, 0.5); }
+        ::-webkit-scrollbar { height: 10px; width: 10px; }
+        ::-webkit-scrollbar-track { background: #f1f1f1; }
+        ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 5px; }
+        ::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
+    </style>
+</head>
+<body class="bg-gray-50 text-gray-800">
+    <div id="root"></div>
+
+    <script type="text/babel">
+        const { useState, useEffect } = React;
+
+        // ============================================================
+        // [설정 영역] 배포 시 여기에 본인의 Firebase 설정을 넣으세요.
+        // 기존 Firebase 프로젝트를 같이 써도 됩니다. (APP_ID로 데이터가 분리됨)
+        // ============================================================
+        const firebaseConfig = {
+          apiKey: "AIzaSyAHm9RMc-69tKS9u0OFAucwG0r6u01ln7E",
+          authDomain: "alphacrawler-51ef3.firebaseapp.com",
+          projectId: "alphacrawler-51ef3",
+          storageBucket: "alphacrawler-51ef3.firebasestorage.app",
+          messagingSenderId: "854370361421",
+          appId: "1:854370361421:web:409a89805cc1a8e04ffc04",
+          measurementId: "G-GTVC1RC710"
+        };
+        
+        // 이 앱만의 고유한 데이터 저장 폴더명(ID)입니다.
+        // Firebase 보안 규칙(Rules)에서 '/artifacts/gift-book-manager/...' 경로에만
+        // 별도 규칙을 적용하면 다른 앱과 정책을 분리할 수 있습니다.
+        const APP_ID = 'gift-book-manager';
+        // ============================================================
+
+
+        // --- Firebase 초기화 함수 ---
+        const initFirebase = () => {
+            if (!window.firebaseModules) return null;
+            const { initializeApp, getAuth, getFirestore } = window.firebaseModules;
+            
+            // 환경 변수(Canvas) 또는 상단 설정 변수(배포용) 사용
+            let config = FIREBASE_CONFIG;
+            let isCanvas = false;
+
+            if (Object.keys(config).length === 0 && typeof __firebase_config !== 'undefined') {
+                config = JSON.parse(__firebase_config);
+                isCanvas = true;
+            }
+
+            if (Object.keys(config).length === 0) {
+                console.error("Firebase 설정이 없습니다.");
+                return null;
+            }
+
+            try {
+                const app = initializeApp(config);
+                const auth = getAuth(app);
+                const db = getFirestore(app);
+                // Canvas 환경 변수 우선, 없으면 상단 상수 사용
+                const appId = typeof __app_id !== 'undefined' ? __app_id : APP_ID;
+                return { auth, db, appId, isCanvas };
+            } catch (e) {
+                console.error("Firebase 초기화 실패:", e);
+                return null;
+            }
+        };
+
+        // ... (아이콘 컴포넌트) ...
+        const Icon = ({ name, size = 16, className = "" }) => {
+            const icons = {
+                BookOpen: (<svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}><path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"/><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"/></svg>),
+                FileDown: (<svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}><path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z"/><polyline points="14 2 14 8 20 8"/><path d="M12 18v-6"/><path d="m9 15 3 3 3-3"/></svg>),
+                Book: (<svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg>),
+                User: (<svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}><path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>),
+                PlusCircle: (<svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}><circle cx="12" cy="12" r="10"/><path d="M8 12h8"/><path d="M12 8v8"/></svg>),
+                ClipboardList: (<svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}><rect width="8" height="4" x="8" y="2" rx="1" ry="1"/><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><path d="M12 11h4"/><path d="M12 16h4"/><path d="M8 11h.01"/><path d="M8 16h.01"/></svg>),
+                Trash2: (<svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/><line x1="10" x2="10" y1="11" y2="17"/><line x1="14" x2="14" y1="11" y2="17"/></svg>),
+                Star: (<svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>),
+                Download: (<svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" x2="12" y1="15" y2="3"/></svg>),
+                X: (<svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>),
+                Cloud: (<svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}><path d="M17.5 19c0-3.037-2.463-5.5-5.5-5.5S6.5 15.963 6.5 19"/><path d="M17.5 19a5.5 5.5 0 0 0 2-10.5c-1.6 0-3 .9-4 2.2a7.5 7.5 0 0 0-15 4c0 1.5.5 2.9 1.3 4.1"/></svg>),
+                Lock: (<svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>),
+                Key: (<svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}><path d="m21 2-2 2m-7.61 7.61a5.5 5.5 0 1 1-7.778 7.778 5.5 5.5 0 0 1 7.777-7.777zm0 0L15.5 7.5m0 0 2 2 2 2m-4-4 2-2 2 2m-2-2v-4m4 8h-4"/></svg>),
+                LogOut: (<svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" x2="9" y1="12" y2="12"/></svg>)
+            };
+            return icons[name] || <span>?</span>;
+        };
+
+        // --- 주소록 모달 컴포넌트 ---
+        const AddressBookModal = ({ isOpen, onClose, savedAddresses, onSelect, onDelete }) => {
+            if (!isOpen) return null;
+            return (
+                <div className="fixed inset-0 z-50 flex items-center justify-center modal-overlay p-4">
+                    <div className="bg-white rounded-xl shadow-xl w-full max-w-2xl max-h-[80vh] flex flex-col">
+                        <div className="p-4 border-b flex justify-between items-center bg-gray-50 rounded-t-xl">
+                            <h3 className="font-bold text-lg text-gray-800 flex items-center gap-2">
+                                <Icon name="Star" className="text-yellow-500" /> 자주 쓰는 주소 목록
+                            </h3>
+                            <button onClick={onClose} className="text-gray-400 hover:text-gray-600">
+                                <Icon name="X" size={24} />
+                            </button>
+                        </div>
+                        <div className="overflow-y-auto flex-1 p-4">
+                            {savedAddresses.length === 0 ? (
+                                <div className="text-center py-10 text-gray-400">
+                                    저장된 주소가 없습니다.<br/>
+                                    입력 폼에서 "자주 쓰는 주소로 등록 & 추가" 버튼을 사용해보세요.
+                                </div>
+                            ) : (
+                                <div className="space-y-3">
+                                    {savedAddresses.map((addr) => (
+                                        <div key={addr.id} className="border rounded-lg p-4 hover:border-indigo-300 hover:bg-indigo-50 transition-all flex justify-between items-center group">
+                                            <div className="flex-1 cursor-pointer" onClick={() => onSelect(addr)}>
+                                                <div className="flex items-center gap-2 mb-1">
+                                                    <span className="font-bold text-gray-800">{addr.recipientName}</span>
+                                                    <span className="text-xs bg-gray-100 px-2 py-0.5 rounded text-gray-600">{addr.recipientType}</span>
+                                                </div>
+                                                <div className="text-sm text-gray-600">
+                                                    {addr.addressBasic} {addr.addressDetail}
+                                                </div>
+                                                <div className="text-xs text-gray-500 mt-1">
+                                                    {addr.mobile} {addr.note && `| ${addr.note}`}
+                                                </div>
+                                            </div>
+                                            <button 
+                                                onClick={(e) => { e.stopPropagation(); onDelete(addr.id); }}
+                                                className="ml-4 p-2 text-gray-300 hover:text-red-500 hover:bg-red-50 rounded-full transition-colors"
+                                                title="삭제"
+                                            >
+                                                <Icon name="Trash2" size={18} />
+                                            </button>
+                                        </div>
+                                    ))}
+                                </div>
+                            )}
+                        </div>
+                    </div>
+                </div>
+            );
+        };
+
+        // --- 접속 화면 컴포넌트 (배포 환경용) ---
+        const LoginScreen = ({ onLogin }) => {
+            const [inputVal, setInputVal] = useState("");
+            const [error, setError] = useState("");
+
+            // 비밀번호 검증용 해시값
+            const TARGET_HASH = "90a3b015d2f62800366d581335b75f769269550b07f30006277259103903530f";
+
+            const handleSubmit = (e) => {
+                e.preventDefault();
+                const sanitizedInput = inputVal.trim();
+                
+                try {
+                    // CryptoJS를 사용하여 안전하게 해싱
+                    const hashHex = CryptoJS.SHA256(sanitizedInput).toString();
+
+                    if (hashHex === TARGET_HASH) {
+                        onLogin(); 
+                    } else {
+                        setError("비밀번호가 올바르지 않습니다.");
+                    }
+                } catch (err) {
+                    console.error("CryptoJS Error:", err);
+                    setError("암호화 라이브러리 로드 중 오류가 발생했습니다.");
+                }
+            };
+
+            return (
+                <div className="min-h-screen flex items-center justify-center bg-gray-100 px-4">
+                    <div className="bg-white p-8 rounded-2xl shadow-xl max-w-md w-full">
+                        <div className="text-center mb-8">
+                            <div className="bg-indigo-100 w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-4 text-indigo-600">
+                                <Icon name="Lock" size={32} />
+                            </div>
+                            <h2 className="text-2xl font-bold text-gray-800">관리자 로그인</h2>
+                            <p className="text-gray-500 mt-2 text-sm">팀 공유 비밀번호를 입력해주세요.</p>
+                        </div>
+                        
+                        <form onSubmit={handleSubmit} className="space-y-4">
+                            <div>
+                                <label className="block text-sm font-medium text-gray-700 mb-1">접속 암호</label>
+                                <div className="relative">
+                                    <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-gray-400">
+                                        <Icon name="Key" size={18} />
+                                    </div>
+                                    <input 
+                                        type="password"
+                                        value={inputVal}
+                                        onChange={(e) => setInputVal(e.target.value)}
+                                        className="w-full pl-10 pr-3 py-3 border rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none transition"
+                                        placeholder="비밀번호 입력"
+                                        autoFocus
+                                        required
+                                    />
+                                </div>
+                            </div>
+
+                            {error && <p className="text-red-500 text-sm break-keep">{error}</p>}
+                            
+                            <button 
+                                type="submit"
+                                className="w-full bg-indigo-600 hover:bg-indigo-700 text-white py-3 rounded-lg font-bold shadow-md transition-all"
+                            >
+                                입장하기
+                            </button>
+                        </form>
+                    </div>
+                </div>
+            );
+        };
+
+        // --- 메인 App 컴포넌트 ---
+        function App() {
+            const [isAuthorized, setIsAuthorized] = useState(false);
+            const [entries, setEntries] = useState([]);
+            const [savedAddresses, setSavedAddresses] = useState([]);
+            const [isModalOpen, setIsModalOpen] = useState(false);
+            const [user, setUser] = useState(null);
+            
+            const [fb, setFb] = useState(null);
+
+            // 1. Firebase 초기화 및 인증
+            useEffect(() => {
+                const firebaseInstance = initFirebase();
+                if (!firebaseInstance) return;
+
+                setFb(firebaseInstance);
+                const { auth, isCanvas } = firebaseInstance;
+                const { signInAnonymously, onAuthStateChanged, signInWithCustomToken } = window.firebaseModules;
+
+                // Canvas(미리보기) 환경이면 자동 로그인 및 인증 통과 처리
+                if (isCanvas) {
+                    setIsAuthorized(true); 
+                    const initAuth = async () => {
+                        if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
+                            await signInWithCustomToken(auth, __initial_auth_token);
+                        } else {
+                            await signInAnonymously(auth);
+                        }
+                    };
+                    initAuth();
+                } else {
+                    // 배포 환경: 익명 로그인 시도 (인증은 LoginScreen에서 암호로 처리)
+                    signInAnonymously(auth);
+                }
+
+                const unsubscribe = onAuthStateChanged(auth, setUser);
+                return () => unsubscribe();
+            }, []);
+
+            // 2. Firestore 구독 (보안 체크 후)
+            useEffect(() => {
+                if (!fb || !user || !isAuthorized) return; 
+                
+                const { db, appId } = fb;
+                const { collection, onSnapshot } = window.firebaseModules;
+
+                const entriesQuery = collection(db, 'artifacts', appId, 'public', 'data', 'entries');
+                const unsubEntries = onSnapshot(entriesQuery, (snapshot) => {
+                    const loadedEntries = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+                    loadedEntries.sort((a, b) => (a.createdAt || 0) - (b.createdAt || 0));
+                    setEntries(loadedEntries);
+                }, (error) => console.error("Entries error:", error));
+
+                const addressesQuery = collection(db, 'artifacts', appId, 'public', 'data', 'savedAddresses');
+                const unsubAddresses = onSnapshot(addressesQuery, (snapshot) => {
+                    const loadedAddresses = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+                    loadedAddresses.sort((a, b) => (a.createdAt || 0) - (b.createdAt || 0));
+                    setSavedAddresses(loadedAddresses);
+                }, (error) => console.error("Addresses error:", error));
+
+                return () => {
+                    unsubEntries();
+                    unsubAddresses();
+                };
+            }, [user, fb, isAuthorized]);
+
+            const [bookInfo, setBookInfo] = useState({ isbn: '', bookTitle: '' });
+            const [recipientInfo, setRecipientInfo] = useState({
+                qty: 1, recipientType: '거래처', reason: '신간 증정',
+                date: new Date().toISOString().split('T')[0],
+                recipientName: '', zipCode: '', addressBasic: '', addressDetail: '',
+                mobile: '', phone: '', paymentType: '신용', note: ''
+            });
+
+            const handleBookChange = (e) => { const { name, value } = e.target; setBookInfo(prev => ({ ...prev, [name]: value })); };
+            const handleRecipientChange = (e) => { const { name, value } = e.target; setRecipientInfo(prev => ({ ...prev, [name]: value })); };
+            
+            const validateForm = () => {
+                if (!bookInfo.bookTitle) { alert("도서명을 입력해주세요."); return false; }
+                if (!recipientInfo.recipientName) { alert("받는 분(상호/고객명)을 입력해주세요."); return false; }
+                return true;
+            };
+            const resetRecipientForm = () => {
+                setRecipientInfo({ ...recipientInfo, recipientName: '', mobile: '', phone: '', zipCode: '', addressBasic: '', addressDetail: '', note: '' });
+            };
+
+            const addEntryToFirestore = async (entryData) => {
+                if (!fb || !user) return;
+                const { addDoc, collection, serverTimestamp } = window.firebaseModules;
+                const { db, appId } = fb;
+                try { await addDoc(collection(db, 'artifacts', appId, 'public', 'data', 'entries'), { ...entryData, createdAt: serverTimestamp() }); } catch (e) { alert("저장 실패: " + e.message); }
+            };
+            const addAddressToFirestore = async (addressData) => {
+                if (!fb || !user) return;
+                const { addDoc, collection, serverTimestamp } = window.firebaseModules;
+                const { db, appId } = fb;
+                try { await addDoc(collection(db, 'artifacts', appId, 'public', 'data', 'savedAddresses'), { ...addressData, createdAt: serverTimestamp() }); } catch (e) {}
+            };
+            const deleteFromFirestore = async (collectionName, docId) => {
+                if (!fb || !user) return;
+                const { deleteDoc, doc } = window.firebaseModules;
+                const { db, appId } = fb;
+                try { await deleteDoc(doc(db, 'artifacts', appId, 'public', 'data', collectionName, docId)); } catch (e) {}
+            };
+
+            const handleAddEntry = async (e) => { e.preventDefault(); if (!validateForm()) return; await addEntryToFirestore({ ...bookInfo, ...recipientInfo }); resetRecipientForm(); };
+            const handleSaveAndAdd = async (e) => { e.preventDefault(); if (!validateForm()) return; await addEntryToFirestore({ ...bookInfo, ...recipientInfo }); await addAddressToFirestore({ ...recipientInfo }); resetRecipientForm(); alert("저장 및 추가 완료"); };
+            const handleDelete = (id) => { if(window.confirm("삭제하시겠습니까?")) deleteFromFirestore('entries', id); };
+            const handleDeleteAddress = (id) => { if (window.confirm("주소를 삭제하시겠습니까?")) deleteFromFirestore('savedAddresses', id); };
+            const handleSelectAddress = (addr) => { const { id, createdAt, ...addrData } = addr; setRecipientInfo(prev => ({ ...prev, ...addrData })); setIsModalOpen(false); };
+            const handleClearAll = async () => {
+                if(!window.confirm("모든 데이터를 삭제하시겠습니까? 다른 사용자에게도 삭제됩니다.")) return;
+                if (!fb || !user) return;
+                for (const entry of entries) { await deleteFromFirestore('entries', entry.id); }
+            };
+            const handleSignOut = () => {
+                // 단순 로그아웃 처리 (다시 암호 입력 화면으로)
+                setIsAuthorized(false);
+            };
+
+            const handleExportExcel = () => {
+                if (entries.length === 0) { alert("내보낼 데이터가 없습니다."); return; }
+                const wb = XLSX.utils.book_new();
+                const header = [ "순번", "ISBN", "도서명", "수량", "증정처", "증정사유", "발송일자", "상호(고객명)", "우편번호(5자리)", "기본주소", "상세주소", "휴대폰번호", "전화번호", "지불구분(신용/착불)", "고객요청사항" ];
+                const dataRows = entries.map((entry, index) => {
+                    let displayIsbn = entry.isbn; let displayTitle = entry.bookTitle;
+                    if (index > 0) { const prevEntry = entries[index - 1]; if (prevEntry.isbn === entry.isbn && prevEntry.bookTitle === entry.bookTitle) { displayIsbn = ''; displayTitle = ''; } }
+                    return [ index + 1, displayIsbn, displayTitle, entry.qty, entry.recipientType, entry.reason, entry.date, entry.recipientName, entry.zipCode, entry.addressBasic, entry.addressDetail, entry.mobile, entry.phone, entry.paymentType, entry.note ];
+                });
+                const wsData = [ ["증정 도서 신청서"], header, ...dataRows ];
+                const ws = XLSX.utils.aoa_to_sheet(wsData);
+                if (!ws['!merges']) ws['!merges'] = [];
+                ws['!merges'].push({ s: { r: 0, c: 0 }, e: { r: 0, c: 14 } });
+                let startRow = 0;
+                for (let i = 1; i <= entries.length; i++) {
+                    const isEnd = i === entries.length;
+                    const isDiff = !isEnd && (entries[i].isbn !== entries[startRow].isbn || entries[i].bookTitle !== entries[startRow].bookTitle);
+                    if (isEnd || isDiff) {
+                        if (i - 1 > startRow) { const rStart = startRow + 2; const rEnd = i - 1 + 2; ws['!merges'].push({ s: { r: rStart, c: 1 }, e: { r: rEnd, c: 1 } }); ws['!merges'].push({ s: { r: rStart, c: 2 }, e: { r: rEnd, c: 2 } }); }
+                        startRow = i;
+                    }
+                }
+                ws['!rows'] = [ { hpx: 35 }, { hpx: 25 } ];
+                const borderStyle = { top: { style: "thin" }, bottom: { style: "thin" }, left: { style: "thin" }, right: { style: "thin" } };
+                const fontBase = { name: "Malgun Gothic", sz: 11 };
+                const alignCenter = { horizontal: "center", vertical: "center" };
+                const alignLeft = { horizontal: "left", vertical: "center", wrapText: true };
+                const colorYellow = { fgColor: { rgb: "FFFF00" } };
+                const colorOrange = { fgColor: { rgb: "FFE699" } };
+                const range = XLSX.utils.decode_range(ws['!ref']);
+                for (let R = range.s.r; R <= range.e.r; ++R) {
+                    for (let C = range.s.c; C <= range.e.c; ++C) {
+                        const cellRef = XLSX.utils.encode_cell({ r: R, c: C });
+                        if (!ws[cellRef]) continue;
+                        ws[cellRef].s = { font: fontBase, border: borderStyle, alignment: alignCenter };
+                        if (R === 0) { ws[cellRef].s = { font: { ...fontBase, sz: 14, bold: true }, alignment: alignCenter, border: {} }; }
+                        else if (R === 1) { let fillStyle = {}; if (C <= 5) fillStyle = colorYellow; else fillStyle = colorOrange; ws[cellRef].s = { font: { ...fontBase, sz: 10, bold: true }, fill: fillStyle, border: borderStyle, alignment: alignCenter }; }
+                        else { if (C === 7 || C === 9 || C === 10 || C === 14) { ws[cellRef].s.alignment = alignLeft; } }
+                    }
+                }
+                ws['!cols'] = [ { wch: 6 }, { wch: 12 }, { wch: 35 }, { wch: 6 }, { wch: 15 }, { wch: 15 }, { wch: 12 }, { wch: 20 }, { wch: 16 }, { wch: 40 }, { wch: 30 }, { wch: 15 }, { wch: 15 }, { wch: 22 }, { wch: 30 } ];
+                XLSX.utils.book_append_sheet(wb, ws, "Sheet1");
+                const today = new Date().toISOString().split('T')[0];
+                XLSX.writeFile(wb, `증정도서_신청서_${today}.xlsx`);
+            };
+
+            if (!isAuthorized) {
+                return (
+                    <LoginScreen onLogin={() => setIsAuthorized(true)} />
+                );
+            }
+
+            return (
+                <div className="min-h-screen pb-20">
+                    <AddressBookModal 
+                        isOpen={isModalOpen}
+                        onClose={() => setIsModalOpen(false)}
+                        savedAddresses={savedAddresses}
+                        onSelect={handleSelectAddress}
+                        onDelete={handleDeleteAddress}
+                    />
+
+                    {/* Header */}
+                    <header className="bg-white border-b sticky top-0 z-10 shadow-sm">
+                        <div className="w-full px-8 py-4 flex justify-between items-center">
+                            <h1 className="text-xl font-bold flex items-center gap-2 text-indigo-700">
+                                <Icon name="BookOpen" /> 증정도서 엑셀 생성기
+                            </h1>
+                            <div className="flex gap-2 items-center">
+                                <span className="text-xs text-gray-500 flex items-center gap-1 bg-gray-100 px-2 py-1 rounded">
+                                    <Icon name="Cloud" size={12}/> {user ? (fb?.isCanvas ? '미리보기 접속' : '접속됨') : '연결 중...'}
+                                </span>
+                                <button 
+                                    onClick={handleExportExcel}
+                                    className="bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-lg text-sm font-medium flex items-center gap-2 transition-colors shadow-sm"
+                                >
+                                    <Icon name="FileDown" size={18} />
+                                    엑셀 다운로드
+                                </button>
+                                {!fb?.isCanvas && (
+                                    <button 
+                                        onClick={handleSignOut}
+                                        className="bg-gray-200 hover:bg-gray-300 text-gray-700 p-2 rounded-lg transition-colors shadow-sm"
+                                        title="로그아웃"
+                                    >
+                                        <Icon name="LogOut" size={18} />
+                                    </button>
+                                )}
+                            </div>
+                        </div>
+                    </header>
+
+                    <main className="w-full px-8 py-8 grid grid-cols-1 lg:grid-cols-3 gap-8">
+                        
+                        {/* Left Column: Input Form (1/3 Width) */}
+                        <div className="lg:col-span-1 space-y-6">
+                            <form className="bg-white p-6 rounded-xl shadow-sm border border-gray-200 sticky top-24">
+                                <div className="space-y-4 mb-6 pb-6 border-b border-gray-100">
+                                    <h2 className="text-lg font-semibold flex items-center gap-2 text-gray-700">
+                                        <Icon name="Book" size={18} className="text-indigo-500"/> 1. 도서 정보
+                                    </h2>
+                                    <div className="bg-indigo-50 p-3 rounded-md text-xs text-indigo-700 mb-2">
+                                        💡 입력한 내용은 모든 사용자에게 실시간 공유됩니다.
+                                    </div>
+                                    <div>
+                                        <label className="block text-sm font-medium text-gray-600 mb-1">도서명 *</label>
+                                        <input 
+                                            type="text" 
+                                            name="bookTitle"
+                                            value={bookInfo.bookTitle}
+                                            onChange={handleBookChange}
+                                            placeholder="예: 그림으로 배우는 구조"
+                                            className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none transition"
+                                        />
+                                    </div>
+                                    <div>
+                                        <label className="block text-sm font-medium text-gray-600 mb-1">ISBN</label>
+                                        <input 
+                                            type="text" 
+                                            name="isbn"
+                                            value={bookInfo.isbn}
+                                            onChange={handleBookChange}
+                                            placeholder="숫자만 입력 (선택)"
+                                            className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none transition"
+                                        />
+                                    </div>
+                                </div>
+
+                                <div className="space-y-4">
+                                    <div className="flex justify-between items-center">
+                                        <h2 className="text-lg font-semibold flex items-center gap-2 text-gray-700">
+                                            <Icon name="User" size={18} className="text-indigo-500"/> 2. 받는 분 정보
+                                        </h2>
+                                        <button 
+                                            type="button"
+                                            onClick={() => setIsModalOpen(true)}
+                                            className="text-xs bg-yellow-100 hover:bg-yellow-200 text-yellow-800 px-3 py-1.5 rounded-full font-medium flex items-center gap-1 transition-colors"
+                                        >
+                                            <Icon name="Download" size={12} />
+                                            주소 불러오기
+                                        </button>
+                                    </div>
+                                    
+                                    <div className="grid grid-cols-2 gap-3">
+                                        <div>
+                                            <label className="block text-xs font-medium text-gray-500 mb-1">상호(고객명) *</label>
+                                            <input 
+                                                required
+                                                type="text" 
+                                                name="recipientName"
+                                                value={recipientInfo.recipientName}
+                                                onChange={handleRecipientChange}
+                                                className="w-full px-3 py-2 border rounded-lg text-sm focus:ring-2 focus:ring-indigo-500 outline-none"
+                                            />
+                                        </div>
+                                        <div>
+                                            <label className="block text-xs font-medium text-gray-500 mb-1">증정처 구분</label>
+                                            <input 
+                                                type="text" 
+                                                name="recipientType"
+                                                value={recipientInfo.recipientType}
+                                                onChange={handleRecipientChange}
+                                                placeholder="예: 역자, 거래처"
+                                                className="w-full px-3 py-2 border rounded-lg text-sm focus:ring-2 focus:ring-indigo-500 outline-none"
+                                            />
+                                        </div>
+                                    </div>
+
+                                    <div className="grid grid-cols-2 gap-3">
+                                        <div>
+                                            <label className="block text-xs font-medium text-gray-500 mb-1">수량</label>
+                                            <input 
+                                                type="number" 
+                                                min="1"
+                                                name="qty"
+                                                value={recipientInfo.qty}
+                                                onChange={handleRecipientChange}
+                                                className="w-full px-3 py-2 border rounded-lg text-sm focus:ring-2 focus:ring-indigo-500 outline-none"
+                                            />
+                                        </div>
+                                        <div>
+                                            <label className="block text-xs font-medium text-gray-500 mb-1">발송일자</label>
+                                            <input 
+                                                type="date" 
+                                                name="date"
+                                                value={recipientInfo.date}
+                                                onChange={handleRecipientChange}
+                                                className="w-full px-3 py-2 border rounded-lg text-sm focus:ring-2 focus:ring-indigo-500 outline-none"
+                                            />
+                                        </div>
+                                    </div>
+
+                                    <div>
+                                        <label className="block text-xs font-medium text-gray-500 mb-1">증정사유</label>
+                                        <input 
+                                            type="text" 
+                                            name="reason"
+                                            value={recipientInfo.reason}
+                                            onChange={handleRecipientChange}
+                                            className="w-full px-3 py-2 border rounded-lg text-sm focus:ring-2 focus:ring-indigo-500 outline-none"
+                                        />
+                                    </div>
+
+                                    <div className="grid grid-cols-3 gap-2">
+                                        <div className="col-span-1">
+                                            <label className="block text-xs font-medium text-gray-500 mb-1">우편번호</label>
+                                            <input 
+                                                type="text" 
+                                                name="zipCode"
+                                                value={recipientInfo.zipCode}
+                                                onChange={handleRecipientChange}
+                                                className="w-full px-3 py-2 border rounded-lg text-sm focus:ring-2 focus:ring-indigo-500 outline-none"
+                                            />
+                                        </div>
+                                        <div className="col-span-2">
+                                            <label className="block text-xs font-medium text-gray-500 mb-1">휴대폰번호</label>
+                                            <input 
+                                                type="text" 
+                                                name="mobile"
+                                                value={recipientInfo.mobile}
+                                                onChange={handleRecipientChange}
+                                                placeholder="010-0000-0000"
+                                                className="w-full px-3 py-2 border rounded-lg text-sm focus:ring-2 focus:ring-indigo-500 outline-none"
+                                            />
+                                        </div>
+                                    </div>
+
+                                    <div>
+                                        <label className="block text-xs font-medium text-gray-500 mb-1">기본주소</label>
+                                        <input 
+                                            type="text" 
+                                            name="addressBasic"
+                                            value={recipientInfo.addressBasic}
+                                            onChange={handleRecipientChange}
+                                            className="w-full px-3 py-2 border rounded-lg text-sm focus:ring-2 focus:ring-indigo-500 outline-none mb-2"
+                                        />
+                                        <input 
+                                            type="text" 
+                                            name="addressDetail"
+                                            value={recipientInfo.addressDetail}
+                                            onChange={handleRecipientChange}
+                                            placeholder="상세주소 (동, 호수 등)"
+                                            className="w-full px-3 py-2 border rounded-lg text-sm focus:ring-2 focus:ring-indigo-500 outline-none"
+                                        />
+                                    </div>
+
+                                    <div className="grid grid-cols-2 gap-3">
+                                        <div>
+                                            <label className="block text-xs font-medium text-gray-500 mb-1">전화번호(선택)</label>
+                                            <input 
+                                                type="text" 
+                                                name="phone"
+                                                value={recipientInfo.phone}
+                                                onChange={handleRecipientChange}
+                                                className="w-full px-3 py-2 border rounded-lg text-sm focus:ring-2 focus:ring-indigo-500 outline-none"
+                                            />
+                                        </div>
+                                        <div>
+                                            <label className="block text-xs font-medium text-gray-500 mb-1">지불구분</label>
+                                            <select 
+                                                name="paymentType"
+                                                value={recipientInfo.paymentType}
+                                                onChange={handleRecipientChange}
+                                                className="w-full px-3 py-2 border rounded-lg text-sm focus:ring-2 focus:ring-indigo-500 outline-none bg-white"
+                                            >
+                                                <option value="신용">신용</option>
+                                                <option value="착불">착불</option>
+                                            </select>
+                                        </div>
+                                    </div>
+                                    
+                                    <div>
+                                        <label className="block text-xs font-medium text-gray-500 mb-1">고객요청사항</label>
+                                        <input 
+                                            type="text" 
+                                            name="note"
+                                            value={recipientInfo.note}
+                                            onChange={handleRecipientChange}
+                                            className="w-full px-3 py-2 border rounded-lg text-sm focus:ring-2 focus:ring-indigo-500 outline-none"
+                                        />
+                                    </div>
+
+                                    <div className="grid grid-cols-2 gap-2 mt-4">
+                                        <button 
+                                            onClick={handleAddEntry}
+                                            className="bg-indigo-600 hover:bg-indigo-700 text-white py-3 rounded-lg font-bold shadow-md transition-all flex items-center justify-center gap-2"
+                                        >
+                                            <Icon name="PlusCircle" />
+                                            리스트에 추가
+                                        </button>
+                                        <button 
+                                            onClick={handleSaveAndAdd}
+                                            className="bg-teal-600 hover:bg-teal-700 text-white py-3 rounded-lg font-bold shadow-md transition-all flex items-center justify-center gap-2"
+                                            title="이 주소를 저장하고 리스트에 추가합니다"
+                                        >
+                                            <Icon name="Star" size={18} />
+                                            주소저장 & 추가
+                                        </button>
+                                    </div>
+                                </div>
+                            </form>
+                        </div>
+
+                        {/* Right Column: List View (2/3 Width) */}
+                        <div className="lg:col-span-2">
+                            <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden flex flex-col h-full">
+                                <div className="p-4 border-b border-gray-100 bg-gray-50 flex justify-between items-center">
+                                    <h3 className="font-bold text-gray-700">신청 목록 ({entries.length}건)</h3>
+                                    {entries.length > 0 && (
+                                        <button onClick={handleClearAll} className="text-xs text-red-500 hover:underline">
+                                            전체 삭제
+                                        </button>
+                                    )}
+                                </div>
+                                <div className="overflow-x-auto flex-1 p-2">
+                                    <table className="w-full text-sm text-left text-gray-600">
+                                        <thead className="text-xs text-gray-700 uppercase bg-gray-100">
+                                            <tr>
+                                                <th className="px-3 py-3 rounded-l-lg">순번</th>
+                                                <th className="px-3 py-3 w-[20%]">도서명/ISBN</th>
+                                                <th className="px-3 py-3 w-[8%]">수량</th>
+                                                <th className="px-3 py-3 w-[15%]">받는 분/구분</th>
+                                                <th className="px-3 py-3 w-[25%]">주소</th>
+                                                <th className="px-3 py-3 w-[15%]">연락처</th>
+                                                <th className="px-3 py-3">비고</th>
+                                                <th className="px-3 py-3 rounded-r-lg text-center w-[8%]">관리</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            {entries.length === 0 ? (
+                                                <tr>
+                                                    <td colSpan="8" className="px-3 py-10 text-center text-gray-400">
+                                                        <div className="flex flex-col items-center gap-2">
+                                                            <Icon name="ClipboardList" size={32} />
+                                                            <span>데이터가 없습니다. 좌측에서 정보를 입력해주세요.</span>
+                                                        </div>
+                                                    </td>
+                                                </tr>
+                                            ) : (
+                                                entries.map((entry, index) => (
+                                                    <tr key={entry.id} className="border-b border-gray-50 hover:bg-indigo-50 transition-colors">
+                                                        <td className="px-3 py-3 font-medium align-top">{index + 1}</td>
+                                                        <td className="px-3 py-3 align-top break-all">
+                                                            <div className="font-semibold text-gray-800">{entry.bookTitle}</div>
+                                                            <div className="text-xs text-gray-500">{entry.isbn}</div>
+                                                        </td>
+                                                        <td className="px-3 py-3 align-top">{entry.qty}권</td>
+                                                        <td className="px-3 py-3 align-top break-keep">
+                                                            <div className="text-gray-900 font-medium">{entry.recipientName}</div>
+                                                            <div className="text-xs text-gray-500">{entry.recipientType} ({entry.paymentType})</div>
+                                                        </td>
+                                                        <td className="px-3 py-3 align-top break-all">
+                                                            <div>{entry.addressBasic}</div>
+                                                            <div className="text-xs text-gray-500">{entry.addressDetail} [{entry.zipCode}]</div>
+                                                        </td>
+                                                        <td className="px-3 py-3 align-top break-all">
+                                                            <div>{entry.mobile}</div>
+                                                            {entry.phone && <div className="text-xs text-gray-400">{entry.phone}</div>}
+                                                        </td>
+                                                        <td className="px-3 py-3 align-top break-all">
+                                                            {entry.note}
+                                                        </td>
+                                                        <td className="px-3 py-3 text-center align-top">
+                                                            <button 
+                                                                onClick={() => handleDelete(entry.id)}
+                                                                className="text-red-400 hover:text-red-600 p-1 rounded-full hover:bg-red-50 transition"
+                                                            >
+                                                                <Icon name="Trash2" size={16} />
+                                                            </button>
+                                                        </td>
+                                                    </tr>
+                                                ))
+                                            )}
+                                        </tbody>
+                                    </table>
+                                </div>
+                            </div>
+                        </div>
+                    </main>
+                </div>
+            );
+        }
+
+        const root = ReactDOM.createRoot(document.getElementById('root'));
+        root.render(<App />);
+    </script>
+</body>
+</html>
