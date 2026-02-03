@@ -15,29 +15,29 @@
     <!-- Babel for JSX -->
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
     
-    <!-- SheetJS with Style Support (xlsx-js-style) -->
+    <!-- SheetJS (Excel) -->
     <script src="https://cdn.jsdelivr.net/npm/xlsx-js-style@1.2.0/dist/xlsx.bundle.js"></script>
 
-    <!-- CryptoJS (보안 호환성용) -->
+    <!-- CryptoJS (보안) -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/crypto-js/4.1.1/crypto-js.min.js"></script>
 
-    <!-- Firebase SDKs -->
+    <!-- Firebase SDKs (v10.13.1 - Stable) -->
     <script type="module">
-        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.2.0/firebase-app.js";
-        import { getAuth, signInAnonymously, onAuthStateChanged, signInWithCustomToken, signInWithEmailAndPassword, signOut } from "https://www.gstatic.com/firebasejs/11.2.0/firebase-auth.js";
-        import { getFirestore, collection, addDoc, deleteDoc, doc, onSnapshot, query, orderBy, serverTimestamp } from "https://www.gstatic.com/firebasejs/11.2.0/firebase-firestore.js";
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/10.13.1/firebase-app.js";
+        import { getAuth, signInAnonymously, onAuthStateChanged, signInWithCustomToken, signOut } from "https://www.gstatic.com/firebasejs/10.13.1/firebase-auth.js";
+        import { getFirestore, collection, addDoc, deleteDoc, doc, onSnapshot, query, orderBy, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.13.1/firebase-firestore.js";
 
         // 전역 모듈로 노출
         window.firebaseModules = {
-            initializeApp, getAuth, signInAnonymously, onAuthStateChanged, signInWithCustomToken, signInWithEmailAndPassword, signOut,
+            initializeApp, getAuth, signInAnonymously, onAuthStateChanged, signInWithCustomToken, signOut,
             getFirestore, collection, addDoc, deleteDoc, doc, onSnapshot, query, orderBy, serverTimestamp
         };
+        console.log("Firebase Modules Loaded");
     </script>
     
     <style>
         @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@300;400;500;700&display=swap');
         body { font-family: 'Noto Sans KR', sans-serif; }
-        
         .modal-overlay { background-color: rgba(0, 0, 0, 0.5); }
         ::-webkit-scrollbar { height: 10px; width: 10px; }
         ::-webkit-scrollbar-track { background: #f1f1f1; }
@@ -51,43 +51,47 @@
     <script type="text/babel">
         const { useState, useEffect } = React;
 
-        // ============================================================
-        // [설정 영역] 배포 시 여기에 본인의 Firebase 설정을 넣으세요.
-        // 기존 Firebase 프로젝트를 같이 써도 됩니다. (APP_ID로 데이터가 분리됨)
-        // ============================================================
-        const firebaseConfig = {
-          apiKey: "AIzaSyAHm9RMc-69tKS9u0OFAucwG0r6u01ln7E",
-          authDomain: "alphacrawler-51ef3.firebaseapp.com",
-          projectId: "alphacrawler-51ef3",
-          storageBucket: "alphacrawler-51ef3.firebasestorage.app",
-          messagingSenderId: "854370361421",
-          appId: "1:854370361421:web:409a89805cc1a8e04ffc04",
-          measurementId: "G-GTVC1RC710"
+        // window 객체에 할당하여 참조 오류 방지
+        window.FIREBASE_CONFIG = {
+            apiKey: "AIzaSyAHm9RMc-69tKS9u0OFAucwG0r6u01ln7E", 
+            authDomain: "alphacrawler-51ef3.firebaseapp.com", 
+            projectId: "alphacrawler-51ef3", 
+            storageBucket: "alphacrawler-51ef3.firebasestorage.app", 
+            messagingSenderId: "854370361421", 
+            appId: "1:854370361421:web:409a89805cc1a8e04ffc04", 
+            measurementId: "G-GTVC1RC710" 
         };
         
-        // 이 앱만의 고유한 데이터 저장 폴더명(ID)입니다.
-        // Firebase 보안 규칙(Rules)에서 '/artifacts/gift-book-manager/...' 경로에만
-        // 별도 규칙을 적용하면 다른 앱과 정책을 분리할 수 있습니다.
-        const APP_ID = 'gift-book-manager';
+        window.APP_ID = 'gift-book-manager';
         // ============================================================
 
 
-        // --- Firebase 초기화 함수 ---
+        // --- Firebase 초기화 ---
         const initFirebase = () => {
-            if (!window.firebaseModules) return null;
+            // 1. 모듈 로드 확인
+            if (!window.firebaseModules) {
+                console.warn("Firebase 모듈이 아직 로드되지 않았습니다.");
+                return null;
+            }
             const { initializeApp, getAuth, getFirestore } = window.firebaseModules;
             
-            // 환경 변수(Canvas) 또는 상단 설정 변수(배포용) 사용
-            let config = FIREBASE_CONFIG;
+            // 2. 설정값 확인 (안전한 접근)
+            let config = window.FIREBASE_CONFIG || {};
             let isCanvas = false;
 
+            // Canvas 환경 변수 체크
             if (Object.keys(config).length === 0 && typeof __firebase_config !== 'undefined') {
-                config = JSON.parse(__firebase_config);
-                isCanvas = true;
+                try {
+                    config = JSON.parse(__firebase_config);
+                    isCanvas = true;
+                } catch (e) {
+                    console.error("Canvas 설정 파싱 오류", e);
+                }
             }
 
+            // 설정값이 여전히 비어있다면 경고
             if (Object.keys(config).length === 0) {
-                console.error("Firebase 설정이 없습니다.");
+                console.error("⛔ Firebase 설정이 비어있습니다. 코드 상단의 window.FIREBASE_CONFIG 값을 채워주세요.");
                 return null;
             }
 
@@ -95,16 +99,17 @@
                 const app = initializeApp(config);
                 const auth = getAuth(app);
                 const db = getFirestore(app);
-                // Canvas 환경 변수 우선, 없으면 상단 상수 사용
-                const appId = typeof __app_id !== 'undefined' ? __app_id : APP_ID;
+                const appId = typeof __app_id !== 'undefined' ? __app_id : (window.APP_ID || 'gift-book-manager');
+                console.log("Firebase Initialized Successfully");
                 return { auth, db, appId, isCanvas };
             } catch (e) {
-                console.error("Firebase 초기화 실패:", e);
+                console.error("⛔ Firebase 초기화 중 오류 발생:", e);
+                alert("Firebase 설정에 문제가 있습니다. 콘솔(F12)을 확인해주세요.\n" + e.message);
                 return null;
             }
         };
 
-        // ... (아이콘 컴포넌트) ...
+        // --- 아이콘 컴포넌트 ---
         const Icon = ({ name, size = 16, className = "" }) => {
             const icons = {
                 BookOpen: (<svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}><path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"/><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"/></svg>),
@@ -125,7 +130,7 @@
             return icons[name] || <span>?</span>;
         };
 
-        // --- 주소록 모달 컴포넌트 ---
+        // --- 주소록 모달 ---
         const AddressBookModal = ({ isOpen, onClose, savedAddresses, onSelect, onDelete }) => {
             if (!isOpen) return null;
             return (
@@ -178,12 +183,12 @@
             );
         };
 
-        // --- 접속 화면 컴포넌트 (배포 환경용) ---
+        // --- 접속 화면 ---
         const LoginScreen = ({ onLogin }) => {
             const [inputVal, setInputVal] = useState("");
             const [error, setError] = useState("");
 
-            // 비밀번호 검증용 해시값
+            // 'team2026' SHA-256 Hash
             const TARGET_HASH = "90a3b015d2f62800366d581335b75f769269550b07f30006277259103903530f";
 
             const handleSubmit = (e) => {
@@ -191,7 +196,7 @@
                 const sanitizedInput = inputVal.trim();
                 
                 try {
-                    // CryptoJS를 사용하여 안전하게 해싱
+                    // CryptoJS를 사용하면 HTTPS/Localhost 제약 없이 어디서든 작동
                     const hashHex = CryptoJS.SHA256(sanitizedInput).toString();
 
                     if (hashHex === TARGET_HASH) {
@@ -201,7 +206,7 @@
                     }
                 } catch (err) {
                     console.error("CryptoJS Error:", err);
-                    setError("암호화 라이브러리 로드 중 오류가 발생했습니다.");
+                    setError("보안 라이브러리 오류입니다. 페이지를 새로고침 해주세요.");
                 }
             };
 
@@ -249,7 +254,7 @@
             );
         };
 
-        // --- 메인 App 컴포넌트 ---
+        // --- 메인 App ---
         function App() {
             const [isAuthorized, setIsAuthorized] = useState(false);
             const [entries, setEntries] = useState([]);
@@ -262,7 +267,7 @@
             // 1. Firebase 초기화 및 인증
             useEffect(() => {
                 const firebaseInstance = initFirebase();
-                if (!firebaseInstance) return;
+                if (!firebaseInstance) return; // 설정값 없으면 중단 (콘솔 에러 확인)
 
                 setFb(firebaseInstance);
                 const { auth, isCanvas } = firebaseInstance;
@@ -280,8 +285,8 @@
                     };
                     initAuth();
                 } else {
-                    // 배포 환경: 익명 로그인 시도 (인증은 LoginScreen에서 암호로 처리)
-                    signInAnonymously(auth);
+                    // 배포 환경: 익명 로그인 시도 (인증은 LoginScreen에서 암호로 처리 후 데이터 구독)
+                    signInAnonymously(auth).catch(err => console.error("Anonymous auth failed:", err));
                 }
 
                 const unsubscribe = onAuthStateChanged(auth, setUser);
@@ -290,24 +295,27 @@
 
             // 2. Firestore 구독 (보안 체크 후)
             useEffect(() => {
+                // user가 있고 + isAuthorized(암호통과) 상태여야만 데이터 구독
                 if (!fb || !user || !isAuthorized) return; 
                 
                 const { db, appId } = fb;
                 const { collection, onSnapshot } = window.firebaseModules;
 
+                // Entries 구독
                 const entriesQuery = collection(db, 'artifacts', appId, 'public', 'data', 'entries');
                 const unsubEntries = onSnapshot(entriesQuery, (snapshot) => {
                     const loadedEntries = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
                     loadedEntries.sort((a, b) => (a.createdAt || 0) - (b.createdAt || 0));
                     setEntries(loadedEntries);
-                }, (error) => console.error("Entries error:", error));
+                }, (error) => console.error("Entries load error:", error));
 
+                // Saved Addresses 구독
                 const addressesQuery = collection(db, 'artifacts', appId, 'public', 'data', 'savedAddresses');
                 const unsubAddresses = onSnapshot(addressesQuery, (snapshot) => {
                     const loadedAddresses = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
                     loadedAddresses.sort((a, b) => (a.createdAt || 0) - (b.createdAt || 0));
                     setSavedAddresses(loadedAddresses);
-                }, (error) => console.error("Addresses error:", error));
+                }, (error) => console.error("Addresses load error:", error));
 
                 return () => {
                     unsubEntries();
