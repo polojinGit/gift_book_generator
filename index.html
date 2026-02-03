@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>증정도서 신청서 생성기 (팀 전용)</title>
+    <title>증정도서 신청서 생성기</title>
     
     <!-- Tailwind CSS -->
     <script src="https://cdn.tailwindcss.com"></script>
@@ -18,21 +18,17 @@
     <!-- SheetJS (Excel) -->
     <script src="https://cdn.jsdelivr.net/npm/xlsx-js-style@1.2.0/dist/xlsx.bundle.js"></script>
 
-    <!-- CryptoJS (보안) -->
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/crypto-js/4.1.1/crypto-js.min.js"></script>
-
-    <!-- Firebase SDKs (v10.13.1 - Stable) -->
+    <!-- Firebase SDKs (v10.13.1) -->
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/10.13.1/firebase-app.js";
-        import { getAuth, signInAnonymously, onAuthStateChanged, signInWithCustomToken, signOut } from "https://www.gstatic.com/firebasejs/10.13.1/firebase-auth.js";
+        import { getAuth, signInWithEmailAndPassword, onAuthStateChanged, signOut } from "https://www.gstatic.com/firebasejs/10.13.1/firebase-auth.js";
         import { getFirestore, collection, addDoc, deleteDoc, doc, onSnapshot, query, orderBy, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.13.1/firebase-firestore.js";
 
         // 전역 모듈로 노출
         window.firebaseModules = {
-            initializeApp, getAuth, signInAnonymously, onAuthStateChanged, signInWithCustomToken, signOut,
+            initializeApp, getAuth, signInWithEmailAndPassword, onAuthStateChanged, signOut,
             getFirestore, collection, addDoc, deleteDoc, doc, onSnapshot, query, orderBy, serverTimestamp
         };
-        console.log("Firebase Modules Loaded");
     </script>
     
     <style>
@@ -52,7 +48,6 @@
         const { useState, useEffect } = React;
 
         // ============================================================
-        // window 객체에 할당하여 참조 오류 방지
         window.FIREBASE_CONFIG = {
             apiKey: "AIzaSyAHm9RMc-69tKS9u0OFAucwG0r6u01ln7E", 
             authDomain: "alphacrawler-51ef3.firebaseapp.com", 
@@ -65,34 +60,23 @@
         
         window.APP_ID = 'gift-book-manager';
         // ============================================================
+        // ============================================================
 
 
         // --- Firebase 초기화 ---
         const initFirebase = () => {
-            // 1. 모듈 로드 확인
-            if (!window.firebaseModules) {
-                console.warn("Firebase 모듈이 아직 로드되지 않았습니다.");
-                return null;
-            }
+            if (!window.firebaseModules) return null;
             const { initializeApp, getAuth, getFirestore } = window.firebaseModules;
             
-            // 2. 설정값 확인 (안전한 접근)
             let config = window.FIREBASE_CONFIG || {};
-            let isCanvas = false;
 
-            // Canvas 환경 변수 체크
+            // Canvas 환경 변수 호환성 (미리보기용)
             if (Object.keys(config).length === 0 && typeof __firebase_config !== 'undefined') {
-                try {
-                    config = JSON.parse(__firebase_config);
-                    isCanvas = true;
-                } catch (e) {
-                    console.error("Canvas 설정 파싱 오류", e);
-                }
+                try { config = JSON.parse(__firebase_config); } catch (e) {}
             }
 
-            // 설정값이 여전히 비어있다면 경고
             if (Object.keys(config).length === 0) {
-                console.error("⛔ Firebase 설정이 비어있습니다. 코드 상단의 window.FIREBASE_CONFIG 값을 채워주세요.");
+                console.error("⛔ Firebase 설정이 없습니다. 코드를 열어 window.FIREBASE_CONFIG를 채워주세요.");
                 return null;
             }
 
@@ -101,17 +85,16 @@
                 const auth = getAuth(app);
                 const db = getFirestore(app);
                 const appId = typeof __app_id !== 'undefined' ? __app_id : (window.APP_ID || 'gift-book-manager');
-                console.log("Firebase Initialized Successfully");
-                return { auth, db, appId, isCanvas };
+                return { auth, db, appId };
             } catch (e) {
-                console.error("⛔ Firebase 초기화 중 오류 발생:", e);
-                alert("Firebase 설정에 문제가 있습니다. 콘솔(F12)을 확인해주세요.\n" + e.message);
+                console.error("Firebase Init Error:", e);
                 return null;
             }
         };
 
         // --- 아이콘 컴포넌트 ---
         const Icon = ({ name, size = 16, className = "" }) => {
+            // (아이콘 데이터는 기존과 동일하게 유지)
             const icons = {
                 BookOpen: (<svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}><path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"/><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"/></svg>),
                 FileDown: (<svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}><path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z"/><polyline points="14 2 14 8 20 8"/><path d="M12 18v-6"/><path d="m9 15 3 3 3-3"/></svg>),
@@ -126,12 +109,12 @@
                 Cloud: (<svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}><path d="M17.5 19c0-3.037-2.463-5.5-5.5-5.5S6.5 15.963 6.5 19"/><path d="M17.5 19a5.5 5.5 0 0 0 2-10.5c-1.6 0-3 .9-4 2.2a7.5 7.5 0 0 0-15 4c0 1.5.5 2.9 1.3 4.1"/></svg>),
                 Lock: (<svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>),
                 Key: (<svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}><path d="m21 2-2 2m-7.61 7.61a5.5 5.5 0 1 1-7.778 7.778 5.5 5.5 0 0 1 7.777-7.777zm0 0L15.5 7.5m0 0 2 2 2 2m-4-4 2-2 2 2m-2-2v-4m4 8h-4"/></svg>),
-                LogOut: (<svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" x2="9" y1="12" y2="12"/></svg>)
+                LogOut: (<svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" x2="9" y1="12" y2="12"/></svg>),
+                Mail: (<svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}><rect width="20" height="16" x="2" y="4" rx="2"/><path d="m22 7-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7"/></svg>)
             };
             return icons[name] || <span>?</span>;
         };
 
-        // --- 주소록 모달 컴포넌트 ---
         const AddressBookModal = ({ isOpen, onClose, savedAddresses, onSelect, onDelete }) => {
             if (!isOpen) return null;
             return (
@@ -184,30 +167,26 @@
             );
         };
 
-        // --- 접속 화면 컴포넌트 (배포 환경용) ---
-        const LoginScreen = ({ onLogin }) => {
-            const [inputVal, setInputVal] = useState("");
+        // --- 정식 Firebase 로그인 컴포넌트 ---
+        const LoginScreen = ({ auth }) => {
+            const [email, setEmail] = useState("");
+            const [password, setPassword] = useState("");
             const [error, setError] = useState("");
+            const [isSubmitting, setIsSubmitting] = useState(false);
 
-            const TARGET_HASH = "8cd15b825149d40381a3ec246ffe1b06599114adadee0530bcc255c991248891";
-
-            const handleSubmit = (e) => {
+            const handleLogin = async (e) => {
                 e.preventDefault();
-                const sanitizedInput = inputVal.trim();
+                setIsSubmitting(true);
+                setError("");
                 
                 try {
-                    // CryptoJS를 사용하여 안전하게 해싱 (환경 제약 없음)
-                    const hashHex = CryptoJS.SHA256(sanitizedInput).toString(CryptoJS.enc.Hex);
-                    console.log("Generated Hash:", hashHex);
-
-                    if (hashHex === TARGET_HASH) {
-                        onLogin(); 
-                    } else {
-                        setError(`비밀번호가 올바르지 않습니다. (Hash: ${hashHex.substring(0, 6)}...)`);
-                    }
+                    const { signInWithEmailAndPassword } = window.firebaseModules;
+                    await signInWithEmailAndPassword(auth, email, password);
+                    // 성공하면 onAuthStateChanged가 App 컴포넌트에서 상태를 업데이트함
                 } catch (err) {
-                    console.error("CryptoJS Error:", err);
-                    setError("암호화 라이브러리 로드 중 오류가 발생했습니다.");
+                    console.error("Login Error:", err);
+                    setError("로그인 실패: 이메일과 비밀번호를 확인해주세요.");
+                    setIsSubmitting(false);
                 }
             };
 
@@ -219,35 +198,53 @@
                                 <Icon name="Lock" size={32} />
                             </div>
                             <h2 className="text-2xl font-bold text-gray-800">관리자 로그인</h2>
-                            <p className="text-gray-500 mt-2 text-sm">팀 공유 비밀번호를 입력해주세요.</p>
+                            <p className="text-gray-500 mt-2 text-sm">등록된 Firebase 계정으로 로그인하세요.</p>
                         </div>
                         
-                        <form onSubmit={handleSubmit} className="space-y-4">
+                        <form onSubmit={handleLogin} className="space-y-4">
                             <div>
-                                <label className="block text-sm font-medium text-gray-700 mb-1">접속 암호</label>
+                                <label className="block text-sm font-medium text-gray-700 mb-1">이메일</label>
                                 <div className="relative">
                                     <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-gray-400">
-                                        <Icon name="Key" size={18} />
+                                        <Icon name="Mail" size={18} />
                                     </div>
                                     <input 
-                                        type="password"
-                                        value={inputVal}
-                                        onChange={(e) => setInputVal(e.target.value)}
+                                        type="email"
+                                        value={email}
+                                        onChange={(e) => setEmail(e.target.value)}
                                         className="w-full pl-10 pr-3 py-3 border rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none transition"
-                                        placeholder="비밀번호 입력"
+                                        placeholder="admin@example.com"
                                         autoFocus
                                         required
                                     />
                                 </div>
                             </div>
 
-                            {error && <p className="text-red-500 text-xs break-all">{error}</p>}
+                            <div>
+                                <label className="block text-sm font-medium text-gray-700 mb-1">비밀번호</label>
+                                <div className="relative">
+                                    <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-gray-400">
+                                        <Icon name="Key" size={18} />
+                                    </div>
+                                    <input 
+                                        type="password"
+                                        value={password}
+                                        onChange={(e) => setPassword(e.target.value)}
+                                        className="w-full pl-10 pr-3 py-3 border rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none transition"
+                                        placeholder="••••••••"
+                                        required
+                                    />
+                                </div>
+                            </div>
+
+                            {error && <p className="text-red-500 text-sm break-keep">{error}</p>}
                             
                             <button 
                                 type="submit"
-                                className="w-full bg-indigo-600 hover:bg-indigo-700 text-white py-3 rounded-lg font-bold shadow-md transition-all"
+                                disabled={isSubmitting}
+                                className={`w-full text-white py-3 rounded-lg font-bold shadow-md transition-all ${isSubmitting ? 'bg-gray-400' : 'bg-indigo-600 hover:bg-indigo-700'}`}
                             >
-                                입장하기
+                                {isSubmitting ? "로그인 중..." : "로그인"}
                             </button>
                         </form>
                     </div>
@@ -255,52 +252,36 @@
             );
         };
 
-        // --- 메인 App 컴포넌트 ---
+        // --- 메인 App ---
         function App() {
-            const [isAuthorized, setIsAuthorized] = useState(false);
+            const [user, setUser] = useState(null);
             const [entries, setEntries] = useState([]);
             const [savedAddresses, setSavedAddresses] = useState([]);
             const [isModalOpen, setIsModalOpen] = useState(false);
-            const [user, setUser] = useState(null);
             
             const [fb, setFb] = useState(null);
 
             // 오늘 날짜 구하기 함수
             const getToday = () => new Date().toISOString().split('T')[0];
 
-            // 1. Firebase 초기화 및 인증
+            // 1. Firebase 초기화 및 인증 리스너
             useEffect(() => {
                 const firebaseInstance = initFirebase();
                 if (!firebaseInstance) return;
 
                 setFb(firebaseInstance);
-                const { auth, isCanvas } = firebaseInstance;
-                const { signInAnonymously, onAuthStateChanged, signInWithCustomToken } = window.firebaseModules;
+                const { auth } = firebaseInstance;
+                const { onAuthStateChanged } = window.firebaseModules;
 
-                // Canvas(미리보기) 환경이면 자동 로그인 및 인증 통과 처리
-                if (isCanvas) {
-                    setIsAuthorized(true); 
-                    const initAuth = async () => {
-                        if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
-                            await signInWithCustomToken(auth, __initial_auth_token);
-                        } else {
-                            await signInAnonymously(auth);
-                        }
-                    };
-                    initAuth();
-                } else {
-                    // 배포 환경: 익명 로그인 시도 (인증은 LoginScreen에서 암호로 처리 후 데이터 구독)
-                    signInAnonymously(auth).catch(err => console.error("Anonymous auth failed:", err));
-                }
-
-                const unsubscribe = onAuthStateChanged(auth, setUser);
+                const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
+                    setUser(currentUser); // 로그인 상태 변경 시 user 상태 업데이트
+                });
                 return () => unsubscribe();
             }, []);
 
-            // 2. Firestore 구독 (보안 체크 후)
+            // 2. Firestore 구독 (로그인 된 경우에만)
             useEffect(() => {
-                // user가 있고 + isAuthorized(암호통과) 상태여야만 데이터 구독
-                if (!fb || !user || !isAuthorized) return; 
+                if (!fb || !user) return; 
                 
                 const { db, appId } = fb;
                 const { collection, onSnapshot } = window.firebaseModules;
@@ -309,7 +290,8 @@
                 const entriesQuery = collection(db, 'artifacts', appId, 'public', 'data', 'entries');
                 const unsubEntries = onSnapshot(entriesQuery, (snapshot) => {
                     const loadedEntries = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-                    loadedEntries.sort((a, b) => (a.createdAt || 0) - (b.createdAt || 0));
+                    // 생성순 정렬 (Client-side)
+                    loadedEntries.sort((a, b) => (a.createdAt?.seconds || 0) - (b.createdAt?.seconds || 0));
                     setEntries(loadedEntries);
                 }, (error) => console.error("Entries load error:", error));
 
@@ -317,7 +299,7 @@
                 const addressesQuery = collection(db, 'artifacts', appId, 'public', 'data', 'savedAddresses');
                 const unsubAddresses = onSnapshot(addressesQuery, (snapshot) => {
                     const loadedAddresses = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-                    loadedAddresses.sort((a, b) => (a.createdAt || 0) - (b.createdAt || 0));
+                    loadedAddresses.sort((a, b) => (a.createdAt?.seconds || 0) - (b.createdAt?.seconds || 0));
                     setSavedAddresses(loadedAddresses);
                 }, (error) => console.error("Addresses load error:", error));
 
@@ -325,7 +307,7 @@
                     unsubEntries();
                     unsubAddresses();
                 };
-            }, [user, fb, isAuthorized]);
+            }, [user, fb]);
 
             const [bookInfo, setBookInfo] = useState({ isbn: '', bookTitle: '' });
             const [recipientInfo, setRecipientInfo] = useState({
@@ -368,16 +350,12 @@
 
             const handleAddEntry = async (e) => { e.preventDefault(); if (!validateForm()) return; await addEntryToFirestore({ ...bookInfo, ...recipientInfo }); resetRecipientForm(); };
             
-            // 자주 쓰는 주소 저장 & 리스트 추가 (수량, 날짜 저장 제외)
             const handleSaveAndAdd = async (e) => { 
                 e.preventDefault(); 
                 if (!validateForm()) return; 
-                
                 await addEntryToFirestore({ ...bookInfo, ...recipientInfo }); 
-                
-                const { date, qty, ...addressData } = recipientInfo; // date와 qty 제외하고 저장
+                const { date, qty, ...addressData } = recipientInfo; 
                 await addAddressToFirestore(addressData); 
-                
                 resetRecipientForm(); 
                 alert("리스트에 추가하고 주소록에 저장했습니다."); 
             };
@@ -385,13 +363,9 @@
             const handleDelete = (id) => { if(window.confirm("삭제하시겠습니까?")) deleteFromFirestore('entries', id); };
             const handleDeleteAddress = (id) => { if (window.confirm("주소를 삭제하시겠습니까?")) deleteFromFirestore('savedAddresses', id); };
             
-            // 주소 불러오기 (수량, 날짜 제외하고 불러오기)
             const handleSelectAddress = (addr) => { 
-                const { id, createdAt, qty, date, ...addrData } = addr; // 저장된 데이터에서 qty, date 제외
-                setRecipientInfo(prev => ({ 
-                    ...prev, 
-                    ...addrData 
-                })); 
+                const { id, createdAt, qty, date, ...addrData } = addr; 
+                setRecipientInfo(prev => ({ ...prev, ...addrData })); 
                 setIsModalOpen(false); 
             };
             
@@ -400,9 +374,11 @@
                 if (!fb || !user) return;
                 for (const entry of entries) { await deleteFromFirestore('entries', entry.id); }
             };
-            const handleSignOut = () => {
-                // 단순 로그아웃 처리 (다시 암호 입력 화면으로)
-                setIsAuthorized(false);
+            
+            const handleSignOut = async () => {
+                if (fb) {
+                    await window.firebaseModules.signOut(fb.auth);
+                }
             };
 
             const handleExportExcel = () => {
@@ -451,10 +427,9 @@
                 XLSX.writeFile(wb, `증정도서_신청서_${today}.xlsx`);
             };
 
-            if (!isAuthorized) {
-                return (
-                    <LoginScreen onLogin={() => setIsAuthorized(true)} />
-                );
+            // 로그인이 안 되어 있으면 로그인 화면 출력
+            if (!user) {
+                return <LoginScreen auth={fb?.auth} />;
             }
 
             return (
@@ -475,7 +450,7 @@
                             </h1>
                             <div className="flex gap-2 items-center">
                                 <span className="text-xs text-gray-500 flex items-center gap-1 bg-gray-100 px-2 py-1 rounded">
-                                    <Icon name="Cloud" size={12}/> {user ? (fb?.isCanvas ? '미리보기 접속' : '접속됨') : '연결 중...'}
+                                    <Icon name="Cloud" size={12}/> {user ? user.email : '연결 중...'}
                                 </span>
                                 <button 
                                     onClick={handleExportExcel}
@@ -484,15 +459,13 @@
                                     <Icon name="FileDown" size={18} />
                                     엑셀 다운로드
                                 </button>
-                                {!fb?.isCanvas && (
-                                    <button 
-                                        onClick={handleSignOut}
-                                        className="bg-gray-200 hover:bg-gray-300 text-gray-700 p-2 rounded-lg transition-colors shadow-sm"
-                                        title="로그아웃"
-                                    >
-                                        <Icon name="LogOut" size={18} />
-                                    </button>
-                                )}
+                                <button 
+                                    onClick={handleSignOut}
+                                    className="bg-gray-200 hover:bg-gray-300 text-gray-700 p-2 rounded-lg transition-colors shadow-sm"
+                                    title="로그아웃"
+                                >
+                                    <Icon name="LogOut" size={18} />
+                                </button>
                             </div>
                         </div>
                     </header>
