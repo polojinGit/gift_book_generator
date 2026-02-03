@@ -196,26 +196,18 @@
                 const sanitizedInput = inputVal.trim();
                 
                 try {
-                    // 디버깅: 입력값과 생성된 해시 확인 (배포시 제거 가능)
-                    console.log("Input:", sanitizedInput);
-                    
-                    if (typeof CryptoJS === 'undefined') {
-                        throw new Error("CryptoJS 라이브러리가 로드되지 않았습니다.");
-                    }
-
-                    // 명시적으로 Hex 인코딩 지정
+                    // CryptoJS를 사용하여 안전하게 해싱 (환경 제약 없음)
                     const hashHex = CryptoJS.SHA256(sanitizedInput).toString(CryptoJS.enc.Hex);
                     console.log("Generated Hash:", hashHex);
 
                     if (hashHex === TARGET_HASH) {
                         onLogin(); 
                     } else {
-                        // 해시 앞부분을 보여주어 오류 확인 용이하게 함
                         setError(`비밀번호가 올바르지 않습니다. (Hash: ${hashHex.substring(0, 6)}...)`);
                     }
                 } catch (err) {
                     console.error("CryptoJS Error:", err);
-                    setError("암호화 처리 중 오류가 발생했습니다. (콘솔 확인 필요)");
+                    setError("암호화 라이브러리 로드 중 오류가 발생했습니다.");
                 }
             };
 
@@ -272,6 +264,9 @@
             const [user, setUser] = useState(null);
             
             const [fb, setFb] = useState(null);
+
+            // 오늘 날짜 구하기 함수
+            const getToday = () => new Date().toISOString().split('T')[0];
 
             // 1. Firebase 초기화 및 인증
             useEffect(() => {
@@ -335,7 +330,7 @@
             const [bookInfo, setBookInfo] = useState({ isbn: '', bookTitle: '' });
             const [recipientInfo, setRecipientInfo] = useState({
                 qty: 1, recipientType: '거래처', reason: '신간 증정',
-                date: new Date().toISOString().split('T')[0],
+                date: getToday(),
                 recipientName: '', zipCode: '', addressBasic: '', addressDetail: '',
                 mobile: '', phone: '', paymentType: '신용', note: ''
             });
@@ -349,7 +344,7 @@
                 return true;
             };
             const resetRecipientForm = () => {
-                setRecipientInfo({ ...recipientInfo, recipientName: '', mobile: '', phone: '', zipCode: '', addressBasic: '', addressDetail: '', note: '' });
+                setRecipientInfo({ ...recipientInfo, recipientName: '', mobile: '', phone: '', zipCode: '', addressBasic: '', addressDetail: '', note: '', qty: 1, date: getToday() });
             };
 
             const addEntryToFirestore = async (entryData) => {
@@ -372,10 +367,34 @@
             };
 
             const handleAddEntry = async (e) => { e.preventDefault(); if (!validateForm()) return; await addEntryToFirestore({ ...bookInfo, ...recipientInfo }); resetRecipientForm(); };
-            const handleSaveAndAdd = async (e) => { e.preventDefault(); if (!validateForm()) return; await addEntryToFirestore({ ...bookInfo, ...recipientInfo }); await addAddressToFirestore({ ...recipientInfo }); resetRecipientForm(); alert("저장 및 추가 완료"); };
+            
+            // 자주 쓰는 주소 저장 & 리스트 추가 (수량, 날짜 저장 제외)
+            const handleSaveAndAdd = async (e) => { 
+                e.preventDefault(); 
+                if (!validateForm()) return; 
+                
+                await addEntryToFirestore({ ...bookInfo, ...recipientInfo }); 
+                
+                const { date, qty, ...addressData } = recipientInfo; // date와 qty 제외하고 저장
+                await addAddressToFirestore(addressData); 
+                
+                resetRecipientForm(); 
+                alert("리스트에 추가하고 주소록에 저장했습니다."); 
+            };
+            
             const handleDelete = (id) => { if(window.confirm("삭제하시겠습니까?")) deleteFromFirestore('entries', id); };
             const handleDeleteAddress = (id) => { if (window.confirm("주소를 삭제하시겠습니까?")) deleteFromFirestore('savedAddresses', id); };
-            const handleSelectAddress = (addr) => { const { id, createdAt, ...addrData } = addr; setRecipientInfo(prev => ({ ...prev, ...addrData })); setIsModalOpen(false); };
+            
+            // 주소 불러오기 (수량, 날짜 제외하고 불러오기)
+            const handleSelectAddress = (addr) => { 
+                const { id, createdAt, qty, date, ...addrData } = addr; // 저장된 데이터에서 qty, date 제외
+                setRecipientInfo(prev => ({ 
+                    ...prev, 
+                    ...addrData 
+                })); 
+                setIsModalOpen(false); 
+            };
+            
             const handleClearAll = async () => {
                 if(!window.confirm("모든 데이터를 삭제하시겠습니까? 다른 사용자에게도 삭제됩니다.")) return;
                 if (!fb || !user) return;
@@ -572,8 +591,8 @@
                                                 type="date" 
                                                 name="date"
                                                 value={recipientInfo.date}
-                                                onChange={handleRecipientChange}
-                                                className="w-full px-3 py-2 border rounded-lg text-sm focus:ring-2 focus:ring-indigo-500 outline-none"
+                                                readOnly
+                                                className="w-full px-3 py-2 border rounded-lg text-sm bg-gray-100 text-gray-500 outline-none cursor-not-allowed"
                                             />
                                         </div>
                                     </div>
