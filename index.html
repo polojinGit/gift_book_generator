@@ -61,9 +61,7 @@
         
         window.APP_ID = 'gift-book-manager';
         // ============================================================
-
-
-        // --- Firebase 초기화 ---
+  // --- Firebase 초기화 ---
         const initFirebase = () => {
             if (!window.firebaseModules) return null;
             const { initializeApp, getAuth, getFirestore } = window.firebaseModules;
@@ -71,7 +69,6 @@
             let config = window.FIREBASE_CONFIG || {};
             let isCanvas = false;
 
-            // Canvas 환경 변수 호환성 (미리보기용)
             if (Object.keys(config).length === 0 && typeof __firebase_config !== 'undefined') {
                 try { 
                     config = JSON.parse(__firebase_config); 
@@ -119,7 +116,7 @@
             return icons[name] || <span>?</span>;
         };
 
-        // --- 통합 모달 컴포넌트 (Alert & Confirm) ---
+        // --- 통합 모달 컴포넌트 ---
         const Modal = ({ config, onClose }) => {
             if (!config.isOpen) return null;
 
@@ -220,7 +217,7 @@
             );
         };
 
-        // --- 로그인 화면 (배포 환경용) ---
+        // --- 로그인 화면 ---
         const LoginScreen = ({ auth }) => {
             const [email, setEmail] = useState("");
             const [password, setPassword] = useState("");
@@ -317,14 +314,11 @@
             const [savedAddresses, setSavedAddresses] = useState([]);
             const [isModalOpen, setIsModalOpen] = useState(false);
             
-            // 모달 상태 관리 (alert, confirm 대체)
             const [modalConfig, setModalConfig] = useState({ isOpen: false, type: 'alert', message: '', onConfirm: () => {} });
-
             const [fb, setFb] = useState(null);
 
             const getToday = () => new Date().toISOString().split('T')[0];
 
-            // 1. Firebase 초기화 및 인증 리스너
             useEffect(() => {
                 const firebaseInstance = initFirebase();
                 if (!firebaseInstance) return;
@@ -333,7 +327,6 @@
                 const { auth, isCanvas } = firebaseInstance;
                 const { signInAnonymously, onAuthStateChanged, signInWithCustomToken } = window.firebaseModules;
 
-                // Canvas(미리보기) 환경이면 자동 로그인 (DB접속용 익명)
                 if (isCanvas) {
                     const initAuth = async () => {
                         if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
@@ -351,15 +344,17 @@
                 return () => unsubscribe();
             }, []);
 
-            // 2. Firestore 구독
             useEffect(() => {
+                // 보안을 위해 유저 변경 시 즉시 상태 초기화
+                setEntries([]);
+                setSavedAddresses([]);
+
                 const isReady = fb && user;
                 if (!isReady) return; 
                 
                 const { db, appId } = fb;
                 const { collection, onSnapshot } = window.firebaseModules;
 
-                // ★ 사용자별 경로 구독
                 const entriesQuery = collection(db, 'artifacts', appId, 'users', user.uid, 'entries');
                 const unsubEntries = onSnapshot(entriesQuery, (snapshot) => {
                     const loadedEntries = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
@@ -388,7 +383,6 @@
                 mobile: '', phone: '', paymentType: '신용', note: ''
             });
 
-            // UI 헬퍼 함수
             const showAlert = (message) => {
                 setModalConfig({ isOpen: true, type: 'alert', message, onConfirm: () => {} });
             };
@@ -519,16 +513,13 @@
                 XLSX.writeFile(wb, `증정도서_신청서_${today}.xlsx`);
             };
 
-            // 1. 배포 환경: 실제 로그인이 안되어 있으면 로그인 화면
             if (fb && !fb.isCanvas && !user) {
                 return <LoginScreen auth={fb.auth} />;
             }
-            // 2. Canvas 환경: 자동으로 로딩 화면 -> 앱 화면 (익명로그인 대기)
             if (fb && fb.isCanvas && !user) {
                 return <div className="min-h-screen flex items-center justify-center">로딩 중... (미리보기)</div>;
             }
 
-            // 로딩 중이거나 로그인 완료 상태
             if (!user) return <div className="min-h-screen flex items-center justify-center">로딩 중...</div>;
 
             return (
