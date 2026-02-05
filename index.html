@@ -61,7 +61,7 @@
         
         window.APP_ID = 'gift-book-manager';
         // ============================================================
-  // --- Firebase 초기화 ---
+        // --- Firebase 초기화 ---
         const initFirebase = () => {
             if (!window.firebaseModules) return null;
             const { initializeApp, getAuth, getFirestore } = window.firebaseModules;
@@ -317,8 +317,12 @@
             const [modalConfig, setModalConfig] = useState({ isOpen: false, type: 'alert', message: '', onConfirm: () => {} });
             const [fb, setFb] = useState(null);
 
-            const getToday = () => new Date().toISOString().split('T')[0];
+            // 한국 시간(KST) 기준 오늘 날짜 구하기
+            const getKSTDate = () => {
+                return new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Seoul' });
+            };
 
+            // 1. Firebase 초기화 및 인증 리스너
             useEffect(() => {
                 const firebaseInstance = initFirebase();
                 if (!firebaseInstance) return;
@@ -344,6 +348,7 @@
                 return () => unsubscribe();
             }, []);
 
+            // 2. Firestore 구독
             useEffect(() => {
                 // 보안을 위해 유저 변경 시 즉시 상태 초기화
                 setEntries([]);
@@ -355,6 +360,7 @@
                 const { db, appId } = fb;
                 const { collection, onSnapshot } = window.firebaseModules;
 
+                // ★ 사용자별 경로 구독
                 const entriesQuery = collection(db, 'artifacts', appId, 'users', user.uid, 'entries');
                 const unsubEntries = onSnapshot(entriesQuery, (snapshot) => {
                     const loadedEntries = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
@@ -378,7 +384,7 @@
             const [bookInfo, setBookInfo] = useState({ isbn: '', bookTitle: '' });
             const [recipientInfo, setRecipientInfo] = useState({
                 qty: 1, recipientType: '거래처', reason: '신간 증정',
-                date: getToday(),
+                date: getKSTDate(),
                 recipientName: '', zipCode: '', addressBasic: '', addressDetail: '',
                 mobile: '', phone: '', paymentType: '신용', note: ''
             });
@@ -400,7 +406,7 @@
                 return true;
             };
             const resetRecipientForm = () => {
-                setRecipientInfo({ ...recipientInfo, recipientName: '', mobile: '', phone: '', zipCode: '', addressBasic: '', addressDetail: '', note: '', qty: 1, date: getToday() });
+                setRecipientInfo({ ...recipientInfo, recipientName: '', mobile: '', phone: '', zipCode: '', addressBasic: '', addressDetail: '', note: '', qty: 1, date: getKSTDate() });
             };
 
             const addEntryToFirestore = async (entryData) => {
@@ -432,9 +438,13 @@
             const handleSaveAndAdd = async (e) => { 
                 e.preventDefault(); 
                 if (!validateForm()) return; 
+                
                 await addEntryToFirestore({ ...bookInfo, ...recipientInfo }); 
+                
+                // 수량(qty)과 날짜(date) 제외하고 주소만 저장
                 const { date, qty, ...addressData } = recipientInfo; 
                 await addAddressToFirestore(addressData); 
+                
                 resetRecipientForm(); 
                 showAlert("리스트에 추가하고 주소록에 저장했습니다."); 
             };
@@ -447,8 +457,17 @@
             };
             
             const handleSelectAddress = (addr) => { 
+                // 주소록에서 정보 가져올 때, 현재 수량과 오늘 날짜는 유지함
                 const { id, createdAt, qty, date, ...addrData } = addr; 
-                setRecipientInfo(prev => ({ ...prev, ...addrData })); 
+                
+                setRecipientInfo(prev => ({ 
+                    ...prev, 
+                    ...addrData,
+                    // 날짜와 수량은 덮어쓰지 않고 현재 값(또는 초기값) 유지
+                    // 다만 로직상 prev에 이미 date, qty가 있으므로 ...addrData에 없으면 prev가 유지됨.
+                    // 안전을 위해 명시적으로 현재 date 재설정
+                    date: getKSTDate()
+                })); 
                 setIsModalOpen(false); 
             };
             
