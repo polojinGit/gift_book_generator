@@ -488,12 +488,33 @@
 
             const handleExportExcel = () => {
                 if (entries.length === 0) { showAlert("내보낼 데이터가 없습니다."); return; }
+                
+                // ★ [수정됨] 엑셀 다운로드 시 '오늘 날짜'로 고정
+                const exportDate = getKSTDate();
+
                 const wb = XLSX.utils.book_new();
                 const header = [ "순번", "ISBN", "도서명", "수량", "증정처", "증정사유", "발송일자", "상호(고객명)", "우편번호(5자리)", "기본주소", "상세주소", "휴대폰번호", "전화번호", "지불구분(신용/착불)", "고객요청사항" ];
                 const dataRows = entries.map((entry, index) => {
                     let displayIsbn = entry.isbn; let displayTitle = entry.bookTitle;
                     if (index > 0) { const prevEntry = entries[index - 1]; if (prevEntry.isbn === entry.isbn && prevEntry.bookTitle === entry.bookTitle) { displayIsbn = ''; displayTitle = ''; } }
-                    return [ index + 1, displayIsbn, displayTitle, entry.qty, entry.recipientType, entry.reason, entry.date, entry.recipientName, entry.zipCode, entry.addressBasic, entry.addressDetail, entry.mobile, entry.phone, entry.paymentType, entry.note ];
+                    
+                    return [ 
+                        index + 1, 
+                        displayIsbn, 
+                        displayTitle, 
+                        entry.qty, 
+                        entry.recipientType, 
+                        entry.reason, 
+                        exportDate, // ★ 저장된 entry.date 대신 무조건 '오늘 날짜' 사용
+                        entry.recipientName, 
+                        entry.zipCode, 
+                        entry.addressBasic, 
+                        entry.addressDetail, 
+                        entry.mobile, 
+                        entry.phone, 
+                        entry.paymentType, 
+                        entry.note 
+                    ];
                 });
                 const wsData = [ ["증정 도서 신청서"], header, ...dataRows ];
                 const ws = XLSX.utils.aoa_to_sheet(wsData);
